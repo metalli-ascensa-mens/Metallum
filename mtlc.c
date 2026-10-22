@@ -1,7 +1,7 @@
 /*
  * Auteur: Ascensa Mens;
  * Nature: Code source;
- * Date: Samedi 03 juin;
+ * Date: Samedi 03 juin 2026;
  * Langage: Metallvm;
  * Version: O;
  * But: Compilation des logiciels autonomes.
@@ -10,11 +10,17 @@
 #include "mtlc.h"
 
 bool quot = false, is_writing = false;
-char c, word[30], mch[300];
-int i, ii, mi;
+char c, word[30];
+int i, ii, oi, si, mi;
+int block;
 long mtl_size;
 FILE *mtl, *bin;
-WORD code[300];
+WORD code[300], ocode[300], stack[300];
+/* VARIABLES & FUNCTIONS */
+int size;
+MEM dict[300];
+/* CODE MACHINE */
+char mch[300];
 
 /* Analyse lexicale */
 void lex(void) {
@@ -23,6 +29,10 @@ void lex(void) {
 		if(c == '\"') quot = false;
 		word[i] = c;
 		i++;
+	} else if(iscomposedsym(code[ii-1].name[0], c)) { 
+		// Dans le cas d'un digraphe, il faut vérifier que ce dernier est valide.
+		if(code[ii-1].name[1] != 0) exit(2);
+		strcat(code[ii-1].name, &c);
 	} else if(issym(c) || isdelim(c)) {
 		if(c == '\"') quot = true;
 		// Dans le cas d'un symbole réservé, il faut vérifier si un mot n'existe pas avant.
@@ -62,14 +72,15 @@ void lex(void) {
 	}
 }
 
-
-/* Analyse Linguistique */
-void lng(int index) {
-	// Définition des natures des mots.
+/* Analyse syntaxique */
+void syn(int index) {
+	// Définition des natures des mots et de la priorité des opérations.
 	if(isalpha(code[index].name[0])) {
-		if(index+1 < ii) code[index].nature = NAME;
-		else if(code[index+1].name[0] == '[') code[index].nature = FUNCTION;
-		else code[index].nature = NAME;
+		if(code[index+1].name[0] != '[') code[index].nature = NAME;
+		else {
+			code[index].nature = FUNCTION;
+			code[index].sense = block;
+		}
 	}
 	else if(isdigit(code[index].name[0]) || code[index].name[0] == '\"' && code[index].name[1] != 0) {
 		code[index].nature = VALUE;
@@ -77,19 +88,153 @@ void lng(int index) {
 			for(int n = 1; code[index].name[n-1] != 0; ++n) {
 				if(code[index].name[n+1] == 0) code[index].name[n-1] = 0;
 				else code[index].name[n-1] = code[index].name[n];
-				
 			}
 		}
 	}
-	else if(issym(code[index].name[0])) code[index].nature = OPERATOR;
-	else if(isdelim(code[index].name[0])) code[index].nature = DELIMITOR;
+	else if(iscomposedsym(code[index].name[0], code[index].name[1])) {
+		code[index].nature = OPERATOR;
+		if(code[index].name[1] == ':') code[index].sense = block+1;
+		else if(!strcmp(code[index].name, "++") || !strcmp(code[index].name, "--")) code[index].sense = block+9;
+		else if(!strcmp(code[index].name, "**") || !strcmp(code[index].name, "//")) code[index].sense = block+9;
+		else if(!strcmp(code[index].name, "<<") || !strcmp(code[index].name, ">>")) code[index].sense = block+7;
+	}
+	else if(issym(code[index].name[0])) {
+		code[index].nature = OPERATOR;
+		switch(code[index].name[0]) {
+			case '+':
+				code[index].sense = block+7;
+				break;
+			case '-':
+				code[index].sense = block+7;
+				break;
+			case '*':
+				code[index].sense = block+8;
+				break;
+			case '/':
+				code[index].sense = block+8;
+				break;
+			case '^':
+				code[index].sense = block+3;
+				break;
+			case '&':
+				code[index].sense = block+4;
+				break;
+			case '|':
+				code[index].sense = block+2;
+				break;
+			case '!':
+				code[index].sense = block+9;
+				break;
+			case ':':
+				code[index].sense = block+1;
+				break;
+			case '=':
+				code[index].sense = block+5;
+				break;
+		}
+	}
+	else if(isdelim(code[index].name[0])) {
+		code[index].nature = DELIMITOR;
+		switch(code[index].name[0]) {
+			case '(':
+				block++;
+				break;
+			case ')':
+				block--;
+				break;
+			case '[':
+				block++;
+				break;
+			case ']':
+				block--;
+				break;
+			case '{':
+				block++;
+				break;
+			case '}':
+				block--;
+				break;
+		}
+	}
 	else if(code[index].name[0] == '\n' || code[index].name[0] == ';') code[index].nature = INSTRUCTION;
 	else exit(3);
+	switch(code[index].nature) {
+		case NAME:
+			strcpy(ocode[oi].name, code[index].name);
+			ocode[oi].sense = code[index].sense;
+			ocode[oi].nature = code[index].nature;
+			oi++;
+			break;
+		case VALUE:
+			strcpy(ocode[oi].name, code[index].name);
+			ocode[oi].sense = code[index].sense;
+			ocode[oi].nature = code[index].nature;
+			oi++;
+			break;
+		case INSTRUCTION:
+			strcpy(ocode[oi].name, code[index].name);
+			ocode[oi].sense = code[index].sense;
+			ocode[oi].nature = code[index].nature;
+			oi++;
+			break;
+		case OPERATOR:
+			while(stack[si].sense >= code[index].sense && si > 0) {
+				strcpy(ocode[oi].name, stack[si].name);
+				ocode[oi].sense = stack[si].sense;
+				ocode[oi].nature = stack[si].nature;
+				oi++;
+				strcpy(stack[si].name, "");
+				stack[si].nature = NOTHING;
+				stack[si].sense = 0;
+				si--;
+			}
+			si++;
+			strcpy(stack[si].name, code[index].name);
+			stack[si].sense = code[index].sense;
+			stack[si].nature = code[index].nature;
+			break;
+		case FUNCTION:
+			while(stack[si].sense >= code[index].sense && si > 0) {
+				strcpy(ocode[oi].name, stack[si].name);
+				ocode[oi].sense = stack[si].sense;
+				ocode[oi].nature = stack[si].nature;
+				oi++;
+				strcpy(stack[si].name, "");
+				stack[si].sense = 0;
+				si--;
+			}
+			si++;
+			strcpy(stack[si].name, code[index].name);
+			stack[si].sense = code[index].sense;
+			stack[si].nature = code[index].nature;
+			break;
+		case DELIMITOR:
+			break;
+		default:
+			exit(3);
+			break;
+	}
+}
+
+/* Analyse sémantique */
+void sem(int index) {
+	char fname[36];
+	switch(ocode[index].nature) {
+		case NAME:
+			
+			break;
+		case FUNCTION:
+			strcpy(fname, code[index].name);
+			strcat(fname, ".mtlc");
+			FILE *mcode = fopen(fname, "r");
+			fclose(mcode);
+			break;
+	}
 }
 
 /* Compilation */
 void cmp(int *index) {
-	if(!strcmp(code[*index].name, "scribo") && code[(*index)+1].name[0] == '[' && code[(*index)+2].nature == VALUE && code[(*index)+3].name[0] == ']' && code[(*index)+3].name[0] == ']') {
+	if(!strcmp(code[*index].name, "scribo") && code[(*index)+1].name[0] == '[' && code[(*index)+2].nature == VALUE && code[(*index)+3].name[0] == ']') {
 		if(!is_writing) {
 			mch[mi] = 0xB4;
 			mch[mi+1] = 0x0E;
@@ -104,21 +249,15 @@ void cmp(int *index) {
 			mi += 4;
 		}
 		*index += 4;
-	}
+	} else exit(4);
 }
 
-
-int main(void) {
-	// Seulement un fichier peut être lu par le compilateur. Un seul autre peut être écrit.
+int main(int argc, char **argv) {
 	mtl = fopen("codex.mtl", "r");
 	bin = fopen("codex.bin", "w");
-
-	fseek(mtl, 0, SEEK_END);
-	mtl_size = ftell(mtl);
-	fseek(mtl, 0, SEEK_SET);
-	for(long cnt = 0; cnt < mtl_size; cnt++) lex();
+	for(long cnt = 0; !feof(mtl); cnt++) lex();
 	for(int n = 0; n < ii; n++) {
-		lng(n);
+		syn(n);
 		printf(code[n].name);
 		switch(code[n].nature) {
 			case NAME:
@@ -141,7 +280,24 @@ int main(void) {
 				break;
 		}
 	}
-	for(int ic = 0; ic < ii; ic++) {
+	while(si > 0) {
+		strcpy(ocode[oi].name, stack[si].name);
+		ocode[oi].sense = stack[si].sense;
+		ocode[oi].nature = stack[si].nature;
+		oi++;
+		strcpy(stack[si].name, "");
+		stack[si].sense = 0;
+		si--;
+	}
+	si = 0;
+	for(int n = 0; n < oi; n++) {
+		for(int k = 0; k < si; k++) {
+			strcpy(stack[k].name, "");
+			stack[k].nature = NOTHING;
+			stack[k].sense = 0;
+		}
+		sem(n);
+	}for(int ic = 0; ic < ii; ic++) {
 		cmp(&ic);
 	}
 	mch[mi] = 0xEB;
@@ -158,8 +314,7 @@ int main(void) {
 
 	fclose(mtl);
 	fclose(bin);
-
+	
 	// Simulation du fichier compilé.
-	system("C:\\Users\\LEO.DESHAYES\\qemu\\qemu.exe -hda \"C:\\Users\\LEO.DESHAYES\\Projets\\Metallvm O\\Bin\\codex.bin\"");
-	while(1) ;
+	system("C:\\Users\\LEO.DESHAYES\\qemu\\qemu.exe -hda \"C:\\Users\\LEO.DESHAYES\\Moi\\Projets\\Metallvm O\\Bin\\codex.bin\"");
 }
