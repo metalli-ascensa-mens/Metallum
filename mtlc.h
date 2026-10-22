@@ -14,8 +14,8 @@
 
 /*** Définitions des éléments liguistiques ***/
 typedef enum tag_nature {
-	VARIABLE = 0,
-	POINTER = 1,
+	NOTHING = 0,
+	NAME = 1,
 	FUNCTION = 2,
 	TYPE = 3,
 	VALUE = 4,
@@ -31,11 +31,26 @@ typedef struct tag_lexeme {
 	long sense;
 }WORD;
 
+/** Définition d'une variable/fonction **/
+typedef struct tag_memory {
+	char name[30];
+	char address;
+}MEM;
+
 /*** Fonctions de reconnaissance de caractères ***/
 bool issym(char c) {
 	if(c == '+' || c == '-' || c == '*' || c == '/' || c == '&' || c == '|') return true;
 	else if(c == '^' || c == '!' || c == '%' || c == ':' || c == '@' || c == '$') return true;
 	else if(c == '<' || c == '=' || c == '>' || c == '.' || c == '\\' || c == ',') return true;
+	return false;
+}
+
+bool iscomposedsym(char c1, char c2) {
+	if((c1 == '+' || c1 == '-' || c1 == '*' || c1 == '/' || c1 == '&' || c1 == '|' || c1 == '~' || c1 == '%') && c2 == ':') return true;
+	else if((c1 == '+' && c2 == c1) || (c1 == '-' && c2 == c1) || (c1 == '*' && c2 == c1) || (c1 == '/' && c2 == c1)) return true;
+	else if((c1 == '<' && c2 == c1) || (c1 == '>' && c2 == c1) || (c1 == '~' && c2 == c1) || (c1 == '#' && c2 == c1)) return true;
+	else if((c1 == '<' && c2 == '=') || (c1 == '>' && c2 == '=') || (c1 == '!' && c2 == '=')) return true;
+	else if((c1 == '!' && c2 == '?') || (c1 == '?' && c2 == '!')) return true;
 	return false;
 }
 
